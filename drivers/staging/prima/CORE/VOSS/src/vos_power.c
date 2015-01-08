@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
  * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
@@ -716,3 +717,5 @@ VOS_STATUS vos_chipVoteFreqFor1p3VSupply
 {
     return VOS_STATUS_SUCCESS;
 }
+=======
+>>>>>>> 1b5546f... prima: Squashed update to LA.BF.1.1_rb1.12
