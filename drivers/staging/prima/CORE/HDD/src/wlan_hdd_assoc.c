@@ -460,8 +460,9 @@ void hdd_SendFTEvent(hdd_adapter_t *pAdapter)
     ftEvent.ies = (u8 *)(ftIe + SIR_MAC_ADDR_LENGTH);
     ftEvent.ies_len = auth_resp_len - SIR_MAC_ADDR_LENGTH;
 
-    hddLog(LOG1, "%s ftEvent.ies_len %d",__FUNCTION__, ftEvent.ies_len);
-    hddLog(LOG1, "%s ftEvent.ric_ies_len  %d",__FUNCTION__, ftEvent.ric_ies_len );
+    hddLog(LOG1, "%s ftEvent.ies_len %zu", __FUNCTION__, ftEvent.ies_len);
+    hddLog(LOG1, "%s ftEvent.ric_ies_len %zu",
+           __FUNCTION__, ftEvent.ric_ies_len );
     hddLog(LOG1, "%s ftEvent.target_ap %2x-%2x-%2x-%2x-%2x-%2x ",
             __FUNCTION__, ftEvent.target_ap[0], ftEvent.target_ap[1],
             ftEvent.target_ap[2], ftEvent.target_ap[3], ftEvent.target_ap[4],
@@ -641,7 +642,7 @@ static void hdd_SendAssociationEvent(struct net_device *dev,tCsrRoamInfo *pCsrRo
         * decrease count for Active sessions. We should not increase active
         * active session in case of roaming.
         */
-       if(pHddStaCtx->ft_carrier_on == FALSE)
+       if((pHddStaCtx->ft_carrier_on == FALSE) && !pCsrRoamInfo->fReassocReq)
        {
            wlan_hdd_incr_active_session(pHddCtx, pAdapter->device_mode);
        }
@@ -803,6 +804,8 @@ static eHalStatus hdd_DisConnectHandler( hdd_adapter_t *pAdapter, tCsrRoamInfo *
     // notify apps that we can't pass traffic anymore
     netif_tx_disable(dev);
     netif_carrier_off(dev);
+    //TxTimeoutCount need to reset in case of disconnect handler
+    pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount = 0;
 
     INIT_COMPLETION(pAdapter->disconnect_comp_var);
     /* HDD has initiated disconnect, do not send disconnect indication
@@ -1297,7 +1300,7 @@ static eHalStatus hdd_AssociationCompletionHandler( hdd_adapter_t *pAdapter, tCs
            know that the device is getting activated properly.
            */
 #if  defined (WLAN_FEATURE_VOWIFI_11R) || defined (FEATURE_WLAN_ESE) || defined(FEATURE_WLAN_LFR)
-        if (pHddStaCtx->ft_carrier_on == FALSE)
+        if (pHddStaCtx->ft_carrier_on == FALSE && !hddDisconInProgress )
         {
 #endif
             // Enable Linkup Event Servicing which allows the net device notifier to set the linkup event variable
@@ -1357,6 +1360,7 @@ static eHalStatus hdd_AssociationCompletionHandler( hdd_adapter_t *pAdapter, tCs
             if (NULL == bss)
             {
                 pr_err("wlan: Not able to create BSS entry\n");
+                netif_carrier_off(dev);
                 return eHAL_STATUS_FAILURE;
             }
 #ifdef WLAN_FEATURE_VOWIFI_11R
@@ -1558,7 +1562,8 @@ static eHalStatus hdd_AssociationCompletionHandler( hdd_adapter_t *pAdapter, tCs
                       sizeof(pAdapter->hdd_stats.hddPmfStats) );
 #endif
         // Start the Queue
-        netif_tx_wake_all_queues(dev);
+        if ( !hddDisconInProgress )
+            netif_tx_wake_all_queues(dev);
 #ifdef DEBUG_ROAM_DELAY
         vos_record_roam_event(e_HDD_ENABLE_TX_QUEUE, NULL, 0);
 #endif
@@ -2573,10 +2578,20 @@ eHalStatus hdd_RoamTdlsStatusUpdateHandler(hdd_adapter_t *pAdapter,
                                    ("HDD: del STA IDX = %x"), pRoamInfo->staId) ;
 
                     curr_peer = wlan_hdd_tdls_find_peer(pAdapter, pRoamInfo->peerMac, TRUE);
-                    if (NULL != curr_peer && TDLS_IS_CONNECTED(curr_peer))
+                    if (NULL != curr_peer)
                     {
-                        hdd_roamDeregisterTDLSSTA ( pAdapter, pRoamInfo->staId );
-                        wlan_hdd_tdls_decrement_peer_count(pAdapter);
+                       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+                                 " Current status for peer" MAC_ADDRESS_STR "is %d",
+                                 MAC_ADDR_ARRAY(pRoamInfo->peerMac), curr_peer->link_status);
+                       if (TDLS_IS_CONNECTED(curr_peer))
+                       {
+                           hdd_roamDeregisterTDLSSTA ( pAdapter, pRoamInfo->staId );
+                           wlan_hdd_tdls_decrement_peer_count(pAdapter);
+                       }
+                       else if (eTDLS_LINK_CONNECTING == curr_peer->link_status)
+                       {
+                           hdd_roamDeregisterTDLSSTA ( pAdapter, pRoamInfo->staId );
+                       }
                     }
                     wlan_hdd_tdls_reset_peer(pAdapter, pRoamInfo->peerMac);
 

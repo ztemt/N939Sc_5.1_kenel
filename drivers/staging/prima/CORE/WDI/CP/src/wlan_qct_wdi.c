@@ -190,7 +190,11 @@ static placeHolderInCapBitmap supportEnabledFeatures[] =
    ,DYNAMIC_WMM_PS                 //43
 
    ,MAC_SPOOFED_SCAN               //44
-
+   ,FEATURE_NOT_SUPPORTED          //45
+   ,FEATURE_NOT_SUPPORTED          //46
+   ,FEATURE_NOT_SUPPORTED          //47
+   ,WPS_PRBRSP_TMPL                //48
+   ,BCN_IE_FLT_DELTA               //49
 };
 
 /*-------------------------------------------------------------------------- 
@@ -1393,6 +1397,17 @@ void WDI_TraceHostFWCapabilities(tANI_U32 *capabilityBitmap)
 
                      case MAC_SPOOFED_SCAN: snprintf(pCapStr, sizeof("MAC_SPOOFED_SCAN"), "%s", "MAC_SPOOFED_SCAN");
                           pCapStr += strlen("MAC_SPOOFED_SCAN");
+                          break;
+                     case WPS_PRBRSP_TMPL: snprintf(pCapStr, sizeof("WPS_PRBRSP_TMPL"), "%s", "WPS_PRBRSP_TMPL");
+                          pCapStr += strlen("WPS_PRBRSP_TMPL");
+                          break;
+                     case BCN_IE_FLT_DELTA: snprintf(pCapStr, sizeof("BCN_IE_FLT_DELTA"), "%s", "BCN_IE_FLT_DELTA");
+                          pCapStr += strlen("BCN_IE_FLT_DELTA");
+                          break;
+
+
+                     case BMU_ERROR_GENERIC_RECOVERY: snprintf(pCapStr, sizeof("BMU_ERROR_GENERIC_RECOVERY"), "%s", "BMU_ERROR_GENERIC_RECOVERY");
+                          pCapStr += strlen("BMU_ERROR_GENERIC_RECOVERY");
                           break;
 
                  }
@@ -3744,6 +3759,7 @@ WDI_EnterImpsReq
 WDI_Status
 WDI_ExitImpsReq
 (
+   WDI_ExitImpsReqParamsType *pwdiExitImpsReqParams,
    WDI_ExitImpsRspCb  wdiExitImpsRspCb,
    void*                   pUserData
 )
@@ -3766,8 +3782,8 @@ WDI_ExitImpsReq
     Fill in Event data and post to the Main FSM
   ------------------------------------------------------------------------*/
   wdiEventData.wdiRequest      = WDI_EXIT_IMPS_REQ;
-  wdiEventData.pEventData      = NULL;
-  wdiEventData.uEventDataSize  = 0;
+  wdiEventData.pEventData      = pwdiExitImpsReqParams;
+  wdiEventData.uEventDataSize  = sizeof(*pwdiExitImpsReqParams);
   wdiEventData.pCBfnc          = wdiExitImpsRspCb;
   wdiEventData.pUserData       = pUserData;
 
@@ -13782,13 +13798,16 @@ WDI_ProcessExitImpsReq
    wpt_uint8*               pSendBuffer         = NULL;
    wpt_uint16               usDataOffset        = 0;
    wpt_uint16               usSendSize          = 0;
+   WDI_ExitImpsReqParamsType *pwdiExitImpsReqParams = NULL;
    /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
    /*-------------------------------------------------------------------------
      Sanity check
    -------------------------------------------------------------------------*/
    if (( NULL == pEventData ) ||
-       ( NULL == (wdiExitImpsRspCb   = (WDI_ExitImpsRspCb)pEventData->pCBfnc)))
+       ( NULL == (wdiExitImpsRspCb   = (WDI_ExitImpsRspCb)pEventData->pCBfnc)) ||
+        (NULL == (pwdiExitImpsReqParams =
+                 (WDI_ExitImpsReqParamsType*)pEventData->pEventData)))
    {
       WPAL_TRACE( eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_WARN,
                   "%s: Invalid parameters", __func__);
@@ -13811,7 +13830,8 @@ WDI_ProcessExitImpsReq
       WDI_ASSERT(0);
       return WDI_STATUS_E_FAILURE;
    }
-
+   pWDICtx->wdiReqStatusCB = pwdiExitImpsReqParams->wdiReqStatusCB;
+   pWDICtx->pReqStatusUserData = pwdiExitImpsReqParams->pUserData;
    /*-------------------------------------------------------------------------
      Send Get STA Request to HAL
    -------------------------------------------------------------------------*/
@@ -17973,7 +17993,6 @@ WDI_ProcessDelSTASelfRsp
  @see
  @return Result of the function call
 */
-#define OFFSET_OF(structType,fldName)   (&((structType*)0)->fldName)
 
 WDI_Status
 WDI_ProcessStartOemDataRsp
@@ -22069,7 +22088,8 @@ WDI_SendMsg
                 WDI_getRespMsgString(pWDICtx->wdiExpectedResponse),
                 pWDICtx->wdiExpectedResponse);
 
-     wdiStatus = WDI_STATUS_E_FAILURE;
+     wdiStatus = (ret == eWLAN_PAL_STATUS_E_FAILURE) ?
+                  WDI_STATUS_DEV_INTERNAL_FAILURE : WDI_STATUS_E_FAILURE;
    }
    else
    {
@@ -22102,8 +22122,10 @@ WDI_SendMsg
      (wdiStatus) to WDI_STATUS_PENDING. This makes sure that WDA doesnt
      end up repeating the functonality in the req callback  for the
      WDI_STATUS_E_FAILURE case*/
-     if (wdiStatus == WDI_STATUS_E_FAILURE)
+     if (wdiStatus != WDI_STATUS_SUCCESS)
+     {
        wdiStatus = WDI_STATUS_PENDING;
+     }
    }
 
   if ( wdiStatus == WDI_STATUS_SUCCESS )
@@ -22119,10 +22141,6 @@ WDI_SendMsg
   {
      /*Inform upper stack layers that a transport fatal error occurred*/
      WDI_DetectedDeviceError(pWDICtx, WDI_ERR_TRANSPORT_FAILURE);
-     if (eWLAN_PAL_STATUS_E_FAILURE == ret)
-     {
-         wdiStatus = WDI_STATUS_DEV_INTERNAL_FAILURE;
-     }
   }
 
   return wdiStatus;
@@ -30634,6 +30652,8 @@ WDI_ProcessHT40OBSSScanInd
          pwdiHT40OBSSScanInd->selfStaIdx;
   pHT40ObssScanInd->bssIdx =
          pwdiHT40OBSSScanInd->bssIdx;
+  pHT40ObssScanInd->currentOperatingClass =
+         pwdiHT40OBSSScanInd->currentOperatingClass;
   pHT40ObssScanInd->fortyMHZIntolerent =
          pwdiHT40OBSSScanInd->fortyMHZIntolerent;
   pHT40ObssScanInd->channelCount =

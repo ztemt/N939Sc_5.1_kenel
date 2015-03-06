@@ -76,7 +76,6 @@
 #include "sapApi.h"
 #include "macTrace.h"
 
-
 #ifdef DEBUG_ROAM_DELAY
 #include "vos_utils.h"
 #endif
@@ -96,6 +95,7 @@ extern eHalStatus pmcPrepareCommand( tpAniSirGlobal pMac, eSmeCommandType cmdTyp
                             tANI_U32 size, tSmeCmd **ppCmd );
 extern void pmcReleaseCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand );
 extern void qosReleaseCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand );
+extern void csrReleaseRocReqCommand( tpAniSirGlobal pMac);
 extern eHalStatus p2pProcessRemainOnChannelCmd(tpAniSirGlobal pMac, tSmeCmd *p2pRemainonChn);
 extern eHalStatus sme_remainOnChnRsp( tpAniSirGlobal pMac, tANI_U8 *pMsg);
 extern eHalStatus sme_mgmtFrmInd( tHalHandle hHal, tpSirSmeMgmtFrameInd pSmeMgmtFrm);
@@ -464,6 +464,11 @@ tSmeCmd *smeGetCommandBuffer( tpAniSirGlobal pMac )
 
 void smePushCommand( tpAniSirGlobal pMac, tSmeCmd *pCmd, tANI_BOOLEAN fHighPriority )
 {
+    if (!SME_IS_START(pMac))
+    {
+       smsLog( pMac, LOGE, FL("Sme in stop state"));
+       return;
+    }
     if ( fHighPriority )
     {
         csrLLInsertHead( &pMac->sme.smeCmdPendingList, &pCmd->Link, LL_ACCESS_LOCK );
@@ -1456,6 +1461,7 @@ eHalStatus sme_UpdateConfig(tHalHandle hHal, tpSmeConfigParams pSmeConfigParams)
          pSmeConfigParams->csrConfig.isCoalesingInIBSSAllowed;
    pMac->fEnableDebugLog = pSmeConfigParams->fEnableDebugLog;
    pMac->fDeferIMPSTime = pSmeConfigParams->fDeferIMPSTime;
+   pMac->fBtcEnableIndTimerVal = pSmeConfigParams->fBtcEnableIndTimerVal;
 
    return status;
 }
@@ -5331,6 +5337,7 @@ eHalStatus sme_InitChannels(tHalHandle hHal)
     return status;
 }
 
+#ifdef CONFIG_ENABLE_LINUX_REG
 /*-------------------------------------------------------------------------
     \fn sme_InitChannelsForCC
 
@@ -5358,6 +5365,7 @@ eHalStatus sme_InitChannelsForCC(tHalHandle hHal, driver_load_type init)
 
     return status;
 }
+#endif
 
 /* ---------------------------------------------------------------------------
 
@@ -11646,4 +11654,53 @@ void sme_disable_dfs_channel(tHalHandle hHal, bool disbale_dfs)
     pMac->scan.fEnableDFSChnlScan = !disbale_dfs;
     csrDisableDfsChannel(pMac);
 
+}
+
+/* ---------------------------------------------------------------------------
+    \fn sme_RegisterBtCoexTDLSCallback
+    \brief  Used to plug in callback function
+            Which notify btcoex on or off.
+            Notification come from FW.
+    \param  hHal
+    \param  pCallbackfn : callback function pointer should be plugged in
+    \- return eHalStatus
+    -------------------------------------------------------------------------*/
+eHalStatus sme_RegisterBtCoexTDLSCallback
+(
+   tHalHandle hHal,
+   void (*pCallbackfn)(void *pAdapter, int )
+)
+{
+    eHalStatus          status    = eHAL_STATUS_SUCCESS;
+    tpAniSirGlobal      pMac      = PMAC_STRUCT(hHal);
+
+    VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
+              "%s: Plug in BtCoex TDLS CB", __func__);
+
+    status = sme_AcquireGlobalLock(&pMac->sme);
+    if (eHAL_STATUS_SUCCESS == status)
+    {
+        if (NULL != pCallbackfn)
+        {
+           pMac->sme.pBtCoexTDLSNotification = pCallbackfn;
+        }
+        sme_ReleaseGlobalLock(&pMac->sme);
+    }
+    return(status);
+}
+
+/* ---------------------------------------------------------------------------
+
+    \fn smeNeighborRoamIsHandoffInProgress
+
+    \brief  This function is a wrapper to call csrNeighborRoamIsHandoffInProgress
+
+    \param hHal - The handle returned by macOpen.
+
+    \return eANI_BOOLEAN_TRUE if reassoc in progress, eANI_BOOLEAN_FALSE otherwise
+
+---------------------------------------------------------------------------*/
+tANI_BOOLEAN smeNeighborRoamIsHandoffInProgress(tHalHandle hHal)
+{
+    return (csrNeighborRoamIsHandoffInProgress(PMAC_STRUCT(hHal)));
 }

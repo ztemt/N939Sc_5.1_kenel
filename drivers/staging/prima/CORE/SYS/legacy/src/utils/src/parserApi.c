@@ -1860,7 +1860,7 @@ sirConvertProbeReqFrame2Struct(tpAniSirGlobal  pMac,
     if ( pr.WscProbeReq.present )
     {
         pProbeReq->wscIePresent = 1;
-        memcpy(&pProbeReq->probeReqWscIeInfo, &pr.WscProbeReq, sizeof(tDot11fIEWscProbeReq));
+        vos_mem_copy(&pProbeReq->probeReqWscIeInfo, &pr.WscProbeReq, sizeof(tDot11fIEWscProbeReq));
     }
 #ifdef WLAN_FEATURE_11AC
     if ( pr.VHTCaps.present )
@@ -2450,8 +2450,13 @@ sirConvertAssocRespFrame2Struct(tpAniSirGlobal pMac,
         pAssocRsp->edcaPresent = 1;
         ConvertEDCAParam( pMac, &pAssocRsp->edca, &ar.EDCAParamSet );
     }
-
-
+    if (ar.ExtCap.present)
+    {
+        vos_mem_copy(&pAssocRsp->ExtCap, &ar.ExtCap, sizeof(tDot11fIEExtCap));
+        limLog(pMac, LOG1,
+               FL("ExtCap is present, TDLSChanSwitProhibited: %d"),
+               ar.ExtCap.TDLSChanSwitProhibited);
+    }
     if ( ar.WMMParams.present )
     {
         pAssocRsp->wmeEdcaPresent = 1;

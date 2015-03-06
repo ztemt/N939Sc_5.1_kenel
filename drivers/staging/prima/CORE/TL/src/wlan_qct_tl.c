@@ -1688,6 +1688,75 @@ WLANTL_ChangeSTAState
 
 /*===========================================================================
 
+  FUNCTION    WLANTL_UpdateTdlsSTAClient
+
+  DESCRIPTION
+
+    HDD will call this API when ENABLE_LINK happens and  HDD want to
+    register QoS or other params for TDLS peers.
+
+  DEPENDENCIES
+
+    A station must have been registered before the WMM/QOS registration is
+    called.
+
+  PARAMETERS
+
+   pvosGCtx:        pointer to the global vos context; a handle to TL's
+                    control block can be extracted from its context
+   wSTADescType:    STA Descriptor, contains information related to the
+                    new added STA
+
+  RETURN VALUE
+
+    The result code associated with performing the operation
+
+    VOS_STATUS_E_FAULT: Station ID is outside array boundaries or pointer to
+                        TL cb is NULL ; access would cause a page fault
+    VOS_STATUS_E_EXISTS: Station was not registered
+    VOS_STATUS_SUCCESS:  Everything is good :)
+
+  SIDE EFFECTS
+
+============================================================================*/
+
+VOS_STATUS
+WLANTL_UpdateTdlsSTAClient
+(
+ v_PVOID_t                 pvosGCtx,
+ WLAN_STADescType*         pwSTADescType
+)
+{
+  WLANTL_CbType* pTLCb = NULL;
+  WLANTL_STAClientType* pClientSTA = NULL;
+  /*------------------------------------------------------------------------
+    Extract TL control block
+   ------------------------------------------------------------------------*/
+  pTLCb = VOS_GET_TL_CB(pvosGCtx);
+  if ( NULL == pTLCb || ( WLAN_MAX_STA_COUNT <= pwSTADescType->ucSTAId))
+  {
+      TLLOGE(VOS_TRACE( VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,
+              "WLAN TL:Invalid TL pointer from pvosGCtx on WLANTL_UpdateTdlsSTAClient"));
+      return VOS_STATUS_E_FAULT;
+  }
+
+  pClientSTA = pTLCb->atlSTAClients[pwSTADescType->ucSTAId];
+  if ((NULL == pClientSTA) || 0 == pClientSTA->ucExists)
+  {
+      TLLOGE(VOS_TRACE( VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,
+                    "WLAN TL:Station not exists"));
+      return VOS_STATUS_E_FAILURE;
+  }
+
+  pClientSTA->wSTADesc.ucQosEnabled = pwSTADescType->ucQosEnabled;
+
+  return VOS_STATUS_SUCCESS;
+
+}
+
+
+/*===========================================================================
+
   FUNCTION    WLANTL_STAPtkInstalled
 
   DESCRIPTION
@@ -2039,7 +2108,7 @@ WLANTL_STAPktPending
 
   if ( 0 == pClientSTA->ucExists )
   {
-    TLLOGE(VOS_TRACE( VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO,
+    TLLOGE(VOS_TRACE( VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,
     "WLAN TL:Station was not previously registered on WLANTL_STAPktPending"));
     return VOS_STATUS_E_EXISTS;
   }
@@ -7837,7 +7906,6 @@ WLANTL_STATxAuth
   {
     /*Send ARP at lowest Phy rate and through WQ5 */
     ucTxFlag |= HAL_USE_BD_RATE_MASK;
-    ucTxFlag |= HAL_USE_FW_IN_TX_PATH;
   }
 
   vosStatus = (VOS_STATUS)WDA_DS_BuildTxPacketInfo( pvosGCtx, 
@@ -8632,7 +8700,7 @@ WLANTL_STARxAuth
        Meta Data would help in routing the packets to appropriate Destination */
     if( WLAN_STA_SOFTAP == pClientSTA->wSTADesc.wSTAType)
     {
-       STAMetaInfoPtr = (v_U32_t *)(ucTid | (WDA_GET_RX_ADDR3_IDX(aucBDHeader) << WLANTL_STAID_OFFSET));
+       STAMetaInfoPtr = (v_U32_t *)(uintptr_t)(ucTid | (WDA_GET_RX_ADDR3_IDX(aucBDHeader) << WLANTL_STAID_OFFSET));
        vos_pkt_set_user_data_ptr( vosDataBuff, VOS_PKT_USER_DATA_ID_TL,
                                  (v_PVOID_t)STAMetaInfoPtr);
     }
@@ -9769,6 +9837,8 @@ if ((0 == w8023Header.usLenType) && (pClientSTA->wSTADesc.ucIsEseSta))
   else
   {
       pw80211Header->wFrmCtrl.subType  = 0;
+      tlMetaInfo->ucUP = 0;
+      tlMetaInfo->ucTID = 0;
 
   // NO NO NO - there is not enough memory allocated to write the QOS ctrl  
   // field, it will overwrite the first 2 bytes of the data packet(LLC header)

@@ -417,6 +417,13 @@ REG_TABLE_ENTRY g_registry_table[] =
                  CFG_IMPS_MAXIMUM_SLEEP_TIME_MIN,
                  CFG_IMPS_MAXIMUM_SLEEP_TIME_MAX ),
 
+   REG_VARIABLE( CFG_DEFER_SCAN_TIME_INTERVAL, WLAN_PARAM_Integer,
+                 hdd_config_t, nDeferScanTimeInterval,
+                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+                 CFG_DEFER_SCAN_TIME_INTERVAL_DEFAULT,
+                 CFG_DEFER_SCAN_TIME_INTERVAL_MIN,
+                 CFG_DEFER_SCAN_TIME_INTERVAL_MAX ),
+
    REG_VARIABLE( CFG_IMPS_MODERATE_SLEEP_TIME_NAME, WLAN_PARAM_Integer,
                  hdd_config_t, nImpsModSleepTime,
                  VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
@@ -2567,6 +2574,13 @@ REG_VARIABLE( CFG_TDLS_SCAN_COEX_SUPPORT_ENABLE, WLAN_PARAM_Integer,
               CFG_TDLS_SCAN_COEX_SUPPORT_ENABLE_DEFAULT,
               CFG_TDLS_SCAN_COEX_SUPPORT_ENABLE_MIN,
               CFG_TDLS_SCAN_COEX_SUPPORT_ENABLE_MAX ),
+
+REG_VARIABLE( CFG_TDLS_SCAN_ENABLE, WLAN_PARAM_Integer,
+              hdd_config_t, fEnableTDLSScan,
+              VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+              CFG_TDLS_SCAN_ENABLE_DEFAULT,
+              CFG_TDLS_SCAN_ENABLE_MIN,
+              CFG_TDLS_SCAN_ENABLE_MAX ),
 #endif
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
@@ -3210,6 +3224,22 @@ REG_VARIABLE( CFG_EXTSCAN_ENABLE, WLAN_PARAM_Integer,
                   CFG_ENABLE_DYNAMIC_RA_START_RATE_DEFAULT,
                   CFG_ENABLE_DYNAMIC_RA_START_RATE_MIN,
                   CFG_ENABLE_DYNAMIC_RA_START_RATE_MAX),
+
+   REG_VARIABLE( CFG_BTC_ENABLE_IND_TIMER_VALUE, WLAN_PARAM_Integer,
+                  hdd_config_t, btcEnableIndTimerVal,
+                  VAR_FLAGS_OPTIONAL |
+                  VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+                  CFG_BTC_ENABLE_IND_TIMER_VALUE_DEFAULT,
+                  CFG_BTC_ENABLE_IND_TIMER_VALUE_MIN,
+                  CFG_BTC_ENABLE_IND_TIMER_VALUE_MAX),
+
+   REG_VARIABLE( CFG_BTC_FAST_WLAN_CONN_PREF , WLAN_PARAM_Integer,
+                 hdd_config_t, btcFastWlanConnPref,
+                 VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+                 CFG_BTC_FAST_WLAN_CONN_PREF_DEFAULT,
+                 CFG_BTC_FAST_WLAN_CONN_PREF_MIN,
+                 CFG_BTC_FAST_WLAN_CONN_PREF_MAX ),
+
 };
 
 /*
@@ -3219,7 +3249,7 @@ REG_VARIABLE( CFG_EXTSCAN_ENABLE, WLAN_PARAM_Integer,
  * Function returns NULL if no new line character was found before end of
  * string was reached
  */
-static char* get_next_line(char* str)
+static char* get_next_line(char* str, char *str_end)
 {
   char c;
 
@@ -3230,6 +3260,10 @@ static char* get_next_line(char* str)
   c = *str;
   while(c != '\n'  && c != '\0' && c != 0xd)  {
     str = str + 1;
+    if (str > str_end)
+    {
+        return str;
+    }
     c = *str;
   }
 
@@ -3337,11 +3371,7 @@ VOS_STATUS hdd_parse_config_ini(hdd_context_t* pHddCtx)
       goto config_exit;
    }
 
-<<<<<<< HEAD
-   hddLog(LOG1, "%s: qcom_cfg.ini Size %d\n",__func__, fw->size);
-=======
    hddLog(LOGE, "%s: qcom_cfg.ini Size %zu", __func__, fw->size);
->>>>>>> 1b5546f... prima: Squashed update to LA.BF.1.1_rb1.12
 
    buffer = (char*)vos_mem_malloc(fw->size);
 
@@ -3366,7 +3396,7 @@ VOS_STATUS hdd_parse_config_ini(hdd_context_t* pHddCtx)
        * So validating if the return pointer is not greater than the end
        * buffer address and modifying the buffer value.
        */
-      line = get_next_line(buffer);
+      line = get_next_line(buffer, (pTemp + (fw->size-1)));
       if(line > (pTemp + fw->size)) {
          hddLog(VOS_TRACE_LEVEL_FATAL, "%s: INI file seems to be corrupted",
                   __func__);
@@ -3617,7 +3647,9 @@ static void print_hdd_cfg(hdd_context_t *pHddCtx)
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gRoamtoDFSChannel] Value = [%u] ",pHddCtx->cfg_ini->allowDFSChannelRoam);
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gMaxConcurrentActiveSessions] Value = [%u] ", pHddCtx->cfg_ini->gMaxConcurrentActiveSessions);
   VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gAcsScanBandPreference] Value = [%u] ",pHddCtx->cfg_ini->acsScanBandPreference);
-  VOS_TRACE (VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH,"Name = [gACSBandSwitchThreshold] value = [%u]\n",pHddCtx->cfg_ini->acsBandSwitchThreshold);
+  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gACSBandSwitchThreshold] value = [%u]\n",pHddCtx->cfg_ini->acsBandSwitchThreshold);
+  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gDeferScanTimeInterval] value = [%u]\n",pHddCtx->cfg_ini->nDeferScanTimeInterval);
+  VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_HIGH, "Name = [gEnableTDLSScan] value = [%u]\n",pHddCtx->cfg_ini->fEnableTDLSScan);
 }
 
 
@@ -3801,7 +3833,7 @@ static VOS_STATUS hdd_apply_cfg_ini( hdd_context_t *pHddCtx, tCfgIniEntry* iniTa
          // If successfully read from the registry, use the value read.
          // If not, use the default value.
          if ( match_status == VOS_STATUS_SUCCESS && (WLAN_PARAM_Integer == pRegEntry->RegType)) {
-            rv = kstrtoul(value_str, 10, &value);
+            rv = kstrtou32(value_str, 10, &value);
             if (rv < 0) {
                 hddLog(LOGE, "%s: Reg Parameter %s invalid. Enforcing default",
                        __func__, pRegEntry->RegName);
@@ -3809,7 +3841,7 @@ static VOS_STATUS hdd_apply_cfg_ini( hdd_context_t *pHddCtx, tCfgIniEntry* iniTa
             }
          }
          else if ( match_status == VOS_STATUS_SUCCESS && (WLAN_PARAM_HexInteger == pRegEntry->RegType)) {
-            rv = kstrtoul(value_str, 16, &value);
+            rv = kstrtou32(value_str, 16, &value);
             if (rv < 0) {
                 hddLog(LOGE, "%s: Reg paramter %s invalid. Enforcing default",
                        __func__, pRegEntry->RegName);
@@ -3864,7 +3896,7 @@ static VOS_STATUS hdd_apply_cfg_ini( hdd_context_t *pHddCtx, tCfgIniEntry* iniTa
          // If not, use the default value.
          if (VOS_STATUS_SUCCESS == match_status)
          {
-            rv = kstrtol(value_str, 10, &svalue);
+            rv = kstrtos32(value_str, 10, &svalue);
             if (rv < 0) {
                 hddLog(VOS_TRACE_LEVEL_WARN, "%s: Reg Parameter %s invalid. Enforcing Default",
                        __func__, pRegEntry->RegName);
@@ -5113,6 +5145,14 @@ v_BOOL_t hdd_update_config_dat( hdd_context_t *pHddCtx )
        hddLog(LOGE, "Could not pass on"
                "WNI_CFG_ENABLE_DYNAMIC_RA_START_RATE to CCM");
    }
+
+   if (ccmCfgSetInt(pHddCtx->hHal, WNI_CFG_BTC_FAST_WLAN_CONN_PREF,
+                    pConfig->btcFastWlanConnPref, NULL,
+                    eANI_BOOLEAN_FALSE) == eHAL_STATUS_FAILURE)
+   {
+      fStatus = FALSE;
+      hddLog(LOGE, "Could not pass on WNI_CFG_BTC_FAST_WLAN_CONN_PREF ");
+   }
    return fStatus;
 }
 
@@ -5356,6 +5396,7 @@ VOS_STATUS hdd_set_sme_config( hdd_context_t *pHddCtx )
    smeConfig->csrConfig.sendDeauthBeforeCon = pConfig->sendDeauthBeforeCon;
 
    smeConfig->fDeferIMPSTime = pHddCtx->cfg_ini->deferImpsTime;
+   smeConfig->fBtcEnableIndTimerVal = pHddCtx->cfg_ini->btcEnableIndTimerVal;
 
    halStatus = sme_UpdateConfig( pHddCtx->hHal, smeConfig);
    if ( !HAL_STATUS_SUCCESS( halStatus ) )
@@ -5491,7 +5532,7 @@ VOS_STATUS hdd_execute_config_command(hdd_context_t *pHddCtx, char *command)
    switch (pRegEntry->RegType)
    {
    case WLAN_PARAM_Integer:
-      rv = kstrtoul(value_str, 10, &value);
+      rv = kstrtou32(value_str, 10, &value);
       if (rv < 0)
           goto done;
       if (value < pRegEntry->VarMin)
@@ -5512,7 +5553,7 @@ VOS_STATUS hdd_execute_config_command(hdd_context_t *pHddCtx, char *command)
       break;
 
    case WLAN_PARAM_HexInteger:
-      rv = kstrtoul(value_str, 16, &value);
+      rv = kstrtou32(value_str, 16, &value);
       if (rv < 0)
          goto done;
       if (value < pRegEntry->VarMin)
@@ -5533,7 +5574,7 @@ VOS_STATUS hdd_execute_config_command(hdd_context_t *pHddCtx, char *command)
       break;
 
    case WLAN_PARAM_SignedInteger:
-      rv = kstrtol(value_str, 10, &svalue);
+      rv = kstrtos32(value_str, 10, &svalue);
       if (rv < 0)
          goto done;
       if (svalue < (v_S31_t)pRegEntry->VarMin)
@@ -5560,7 +5601,7 @@ VOS_STATUS hdd_execute_config_command(hdd_context_t *pHddCtx, char *command)
          // too big
          hddLog(LOGE,
                 "%s: invalid command, string [%s] length "
-                "%u exceeds maximum length %u",
+                "%zu exceeds maximum length %u",
                 __func__, value_str,
                 len_value_str, (pRegEntry->VarSize - 1));
          goto done;
@@ -5576,7 +5617,7 @@ VOS_STATUS hdd_execute_config_command(hdd_context_t *pHddCtx, char *command)
          // out of range
          hddLog(LOGE,
                 "%s: invalid command, MAC address [%s] length "
-                "%u is not expected length %u",
+                "%zu is not expected length %u",
                 __func__, value_str,
                 len_value_str, (VOS_MAC_ADDR_SIZE * 2));
          goto done;

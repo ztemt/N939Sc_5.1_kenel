@@ -680,7 +680,7 @@ typedef struct sSirSmeStartBssReq
 } tSirSmeStartBssReq, *tpSirSmeStartBssReq;
 
 #define GET_IE_LEN_IN_BSS(lenInBss) ( lenInBss + sizeof(lenInBss) - \
-              ((int) OFFSET_OF( tSirBssDescription, ieFields)))
+              ((uintptr_t)OFFSET_OF( tSirBssDescription, ieFields)))
 
 #define WSCIE_PROBE_RSP_LEN (317 + 2)
 
@@ -3613,6 +3613,8 @@ typedef struct sSirSmeDelStaSelfRsp
 #define SIR_COEX_IND_TYPE_ENABLE_UAPSD (6)
 #define SIR_COEX_IND_TYPE_DISABLE_UAPSD (7)
 #define SIR_COEX_IND_TYPE_CXM_FEATURES_NOTIFICATION (8)
+#define SIR_COEX_IND_TYPE_TDLS_ENABLE  (6)
+#define SIR_COEX_IND_TYPE_TDLS_DISABLE (7)
 
 typedef struct sSirSmeCoexInd
 {

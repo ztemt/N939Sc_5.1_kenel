@@ -127,7 +127,7 @@ of NV fragment is nt possbile.The next multiple of 1Kb is 3K */
 #define TOTALFRAGMENTS(x) (((x % FRAGMENT_SIZE) == 0) ? (x / FRAGMENT_SIZE):((x / FRAGMENT_SIZE) + 1))
 
 /* Beacon Filter Length*/
-#define WDI_BEACON_FILTER_LEN 70
+#define WDI_BEACON_FILTER_LEN 90
 
 /* Coex Indication data size - should match WLAN_COEX_IND_DATA_SIZE */
 #define WDI_COEX_IND_DATA_SIZE (4)
@@ -3799,6 +3799,20 @@ typedef struct
    function pointer will be called */
    void*                    pUserData;
 }WDI_EnterImpsReqParamsType;
+
+/*---------------------------------------------------------------------------
+  WDI_ExitImpsReqParamsType
+  Exit IMPS parameters passed to WDI from WDA
+----------------------------------------------------------------------------*/
+typedef struct
+{
+   /*Request status callback offered by UMAC */
+   WDI_ReqStatusCb         wdiReqStatusCB;
+   /*The user data passed in by UMAC, it will be sent back when the above
+   function pointer will be called */
+   void*                   pUserData;
+
+}WDI_ExitImpsReqParamsType;
 
 /*---------------------------------------------------------------------------
   WDI_EnterBmpsReqParamsType
@@ -9022,6 +9036,7 @@ WDI_EnterImpsReq
 WDI_Status 
 WDI_ExitImpsReq
 (
+   WDI_ExitImpsReqParamsType *pwdiExitImpsReqParams,
    WDI_ExitImpsRspCb  wdiExitImpsRspCb,
    void*                   pUserData
 );

@@ -405,6 +405,7 @@ eHalStatus csrInitChannels(tpAniSirGlobal pMac)
     return status;
 }
 
+#ifdef CONFIG_ENABLE_LINUX_REG
 eHalStatus csrInitChannelsForCC(tpAniSirGlobal pMac, driver_load_type init)
 {
     eHalStatus status = eHAL_STATUS_SUCCESS;
@@ -456,6 +457,7 @@ eHalStatus csrInitChannelsForCC(tpAniSirGlobal pMac, driver_load_type init)
 
     return status;
 }
+#endif
 
 eHalStatus csrSetRegInfo(tHalHandle hHal,  tANI_U8 *apCntryCode)
 {
@@ -999,8 +1001,9 @@ void csrAbortCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOLEAN fStop
         {
         case eSmeCommandScan:
             // We need to inform the requester before dropping the scan command
-            smsLog( pMac, LOGW, "%s: Drop scan reason %d callback 0x%X",
-                __func__, pCommand->u.scanCmd.reason, (unsigned int)pCommand->u.scanCmd.callback);
+            smsLog( pMac, LOGW, "%s: Drop scan reason %d callback %p",
+                    __func__, pCommand->u.scanCmd.reason,
+                    pCommand->u.scanCmd.callback);
             if (NULL != pCommand->u.scanCmd.callback)
             {
                 smsLog( pMac, LOGW, "%s callback scan requester", __func__);
@@ -8013,7 +8016,8 @@ static void csrRoamRoamingStateReassocRspProcessor( tpAniSirGlobal pMac, tpSirSm
         result = eCsrReassocFailure;
 #ifdef WLAN_FEATURE_VOWIFI_11R
         if ((eSIR_SME_FT_REASSOC_TIMEOUT_FAILURE == pSmeJoinRsp->statusCode) ||
-                        (eSIR_SME_FT_REASSOC_FAILURE == pSmeJoinRsp->statusCode))
+            (eSIR_SME_FT_REASSOC_FAILURE == pSmeJoinRsp->statusCode) ||
+            (eSIR_SME_JOIN_DEAUTH_FROM_AP_DURING_ADD_STA == pSmeJoinRsp->statusCode))
         {
                 // Inform HDD to turn off FT flag in HDD 
                 if (pNeighborRoamInfo)
@@ -10195,7 +10199,11 @@ void csrRoamCheckForLinkStatusChange( tpAniSirGlobal pMac, tSirSmeRsp *pSirMsg )
 #endif
                          /* OBSS SCAN Indication will be sent to Firmware to start OBSS Scan */
                                     if( CSR_IS_CHANNEL_24GHZ(pSession->connectedProfile.operationChannel)
-                                       && IS_HT40_OBSS_SCAN_FEATURE_ENABLE )
+                                       && IS_HT40_OBSS_SCAN_FEATURE_ENABLE
+                                       && (VOS_P2P_GO_MODE !=
+                                               pSession->pCurRoamProfile->csrPersona
+                                           && VOS_STA_SAP_MODE !=
+                                                pSession->pCurRoamProfile->csrPersona))
                                     {
                                          tpSirSmeHT40OBSSScanInd pMsg;
                                          pMsg = vos_mem_malloc(sizeof(tSirSmeHT40OBSSScanInd));
@@ -10755,9 +10763,13 @@ eHalStatus csrRoamLostLink( tpAniSirGlobal pMac, tANI_U32 sessionId, tANI_U32 ty
         pDeauthIndMsg = (tSirSmeDeauthInd *)pSirMsg;
         pSession->roamingStatusCode = pDeauthIndMsg->statusCode;
         /* Convert into proper reason code */
-        pSession->joinFailStatusCode.reasonCode =
-                (pDeauthIndMsg->reasonCode == eSIR_BEACON_MISSED) ?
-                0 : pDeauthIndMsg->reasonCode;
+        if ((pDeauthIndMsg->reasonCode == eSIR_BEACON_MISSED) ||
+                (pDeauthIndMsg->reasonCode ==
+                 eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON))
+            pSession->joinFailStatusCode.reasonCode = 0;
+        else
+            pSession->joinFailStatusCode.reasonCode = pDeauthIndMsg->reasonCode;
+
        /* cfg layer expects 0 as reason code if
           the driver dosent know the reason code
           eSIR_BEACON_MISSED is defined as locally */
@@ -11416,6 +11428,11 @@ tANI_BOOLEAN csrRoamIsValid40MhzChannel(tpAniSirGlobal pMac, tANI_U8 channel)
                 if((PHY_SINGLE_CHANNEL_CENTERED != eRet) && !csrRoamIsValid40MhzChannel(pMac, centerChn))
                 {
                     smsLog(pMac, LOGE, "  Invalid center channel (%d), disable 40MHz mode", centerChn);
+                    eRet = PHY_SINGLE_CHANNEL_CENTERED;
+                }
+                if ((CSR_IS_CHANNEL_24GHZ(primaryChn))&& !IS_HT40_OBSS_SCAN_FEATURE_ENABLE)
+                {
+                    smsLog(pMac, LOG1,FL("FW doesn't support channelBondingMode24GHz"));
                     eRet = PHY_SINGLE_CHANNEL_CENTERED;
                 }
             }
@@ -17090,6 +17107,13 @@ void csrReleaseCommand(tpAniSirGlobal pMac, tSmeCmd *pCommand)
 eHalStatus csrQueueSmeCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOLEAN fHighPriority )
 {
     eHalStatus status;
+
+    if (!SME_IS_START(pMac))
+    {
+        smsLog( pMac, LOGE, FL("Sme in stop state"));
+        return eHAL_STATUS_FAILURE;
+    }
+
     if( (eSmeCommandScan == pCommand->command) && pMac->scan.fDropScanCmd )
     {
         smsLog(pMac, LOGW, FL(" drop scan (scan reason %d) command"),

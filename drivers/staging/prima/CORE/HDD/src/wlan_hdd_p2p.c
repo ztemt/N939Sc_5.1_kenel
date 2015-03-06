@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -450,12 +450,30 @@ static int wlan_hdd_request_remain_on_channel( struct wiphy *wiphy,
     hdd_remain_on_chan_ctx_t *pRemainChanCtx;
     hdd_cfg80211_state_t *cfgState = WLAN_HDD_GET_CFG_STATE_PTR( pAdapter );
     VOS_STATUS vos_status = VOS_STATUS_E_FAILURE;
-    hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX( pAdapter );
+    hdd_context_t *pHddCtx = NULL;
     hdd_adapter_list_node_t *pAdapterNode = NULL, *pNext = NULL;
     hdd_adapter_t *pAdapter_temp;
-    VOS_STATUS status;
     v_BOOL_t isGoPresent = VOS_FALSE;
     VOS_STATUS checkReadyInd;
+    int status = 0;
+
+    if (NULL == pAdapter)
+    {
+        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                   "%s: HDD adapter is Null", __func__);
+        return -ENODEV;
+    }
+
+    pHddCtx = WLAN_HDD_GET_CTX( pAdapter );
+    status = wlan_hdd_validate_context(pHddCtx);
+
+    if (0 != status)
+    {
+        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                   "%s: HDD context is not valid", __func__);
+        return status;
+    }
+
     hddLog(VOS_TRACE_LEVEL_INFO, "%s: device_mode = %d",
                                  __func__,pAdapter->device_mode);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0))
@@ -482,20 +500,13 @@ static int wlan_hdd_request_remain_on_channel( struct wiphy *wiphy,
      * wlan driver is keep on receiving the remain on channel command
      * and which is resulting in crash. So not allowing any remain on
      * channel requets when Load/Unload is in progress*/
-    if (WLAN_HDD_IS_LOAD_UNLOAD_IN_PROGRESS(((hdd_context_t *)pAdapter->pHddCtx))
-        || hdd_isConnectionInProgress((hdd_context_t *)pAdapter->pHddCtx, VOS_TRUE))
+    if (hdd_isConnectionInProgress((hdd_context_t *)pAdapter->pHddCtx))
     {
         hddLog( LOGE,
-               "%s: Wlan Load/Unload  or Connection is in progress", __func__);
+               "%s: Connection is in progress", __func__);
         return -EBUSY;
     }
 
-    if (((hdd_context_t*)pAdapter->pHddCtx)->isLogpInProgress)
-    {
-        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                "%s:LOGP in Progress. Ignore!!!", __func__);
-        return -EAGAIN;
-    }
     pRemainChanCtx = vos_mem_malloc( sizeof(hdd_remain_on_chan_ctx_t) );
     if( NULL == pRemainChanCtx )
     {
@@ -513,7 +524,7 @@ static int wlan_hdd_request_remain_on_channel( struct wiphy *wiphy,
 #endif
     pRemainChanCtx->duration = duration;
     pRemainChanCtx->dev = dev;
-    *cookie = (tANI_U32) pRemainChanCtx;
+    *cookie = (uintptr_t) pRemainChanCtx;
     pRemainChanCtx->cookie = *cookie;
     pRemainChanCtx->rem_on_chan_request = request_type;
     cfgState->remain_on_chan_ctx = pRemainChanCtx;
@@ -555,11 +566,20 @@ static int wlan_hdd_request_remain_on_channel( struct wiphy *wiphy,
     {
         tANI_U8 sessionId = pAdapter->sessionId;
         //call sme API to start remain on channel.
-        sme_RemainOnChannel(
+        if (eHAL_STATUS_SUCCESS != sme_RemainOnChannel(
              WLAN_HDD_GET_HAL_CTX(pAdapter), sessionId,
              chan->hw_value, duration,
              wlan_hdd_remain_on_channel_callback, pAdapter,
-             (tANI_U8)(request_type == REMAIN_ON_CHANNEL_REQUEST)? TRUE:FALSE);
+             (tANI_U8)(request_type == REMAIN_ON_CHANNEL_REQUEST)? TRUE:FALSE))
+        {
+            VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                    FL(" RemainOnChannel returned fail"));
+            cfgState->remain_on_chan_ctx = NULL;
+            vos_timer_destroy(&pRemainChanCtx->hdd_remain_on_chan_timer);
+            vos_mem_free (pRemainChanCtx);
+            hdd_allow_suspend();
+            return -EINVAL;
+        }
 
         if( REMAIN_ON_CHANNEL_REQUEST == request_type)
         {
@@ -588,8 +608,9 @@ static int wlan_hdd_request_remain_on_channel( struct wiphy *wiphy,
            VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                     "%s: WLANSAP_RemainOnChannel returned fail", __func__);
            cfgState->remain_on_chan_ctx = NULL;
+           vos_timer_destroy(&pRemainChanCtx->hdd_remain_on_chan_timer);
            vos_mem_free (pRemainChanCtx);
-            hdd_allow_suspend();
+           hdd_allow_suspend();
            return -EINVAL;
         }
 
@@ -687,6 +708,7 @@ void hdd_remainChanReadyHandler( hdd_adapter_t *pAdapter )
     }
     cfgState = WLAN_HDD_GET_CFG_STATE_PTR( pAdapter );
     pRemainChanCtx = cfgState->remain_on_chan_ctx;
+    pAdapter->startRocTs = vos_timer_get_system_time();
     hddLog( LOG1, "Ready on chan ind");
     if( pRemainChanCtx != NULL )
     {
@@ -708,7 +730,7 @@ void hdd_remainChanReadyHandler( hdd_adapter_t *pAdapter )
 #else
                                pAdapter->dev,
 #endif
-                               (tANI_U32)pRemainChanCtx,
+                               (uintptr_t)pRemainChanCtx,
                                &pRemainChanCtx->chan,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0))
                                pRemainChanCtx->chan_type,
@@ -806,12 +828,14 @@ int __wlan_hdd_cfg80211_cancel_remain_on_channel( struct wiphy *wiphy,
     /* FIXME cancel currently running remain on chan.
      * Need to check cookie and cancel accordingly
      */
+    mutex_lock(&pHddCtx->roc_lock);
     if( (cfgState->remain_on_chan_ctx == NULL) ||
         (cfgState->remain_on_chan_ctx->cookie != cookie) )
     {
         hddLog( LOGE,
             "%s: No Remain on channel pending with specified cookie value",
              __func__);
+        mutex_unlock(&pHddCtx->roc_lock);
         return -EINVAL;
     }
     if (TRUE != pRemainChanCtx->is_pending_roc_cancelled)
@@ -826,6 +850,7 @@ int __wlan_hdd_cfg80211_cancel_remain_on_channel( struct wiphy *wiphy,
                    "%s: timeout waiting for remain on channel ready indication %d",
                    __func__, status);
            pRemainChanCtx->is_pending_roc_cancelled = TRUE;
+           mutex_unlock(&pHddCtx->roc_lock);
            return 0;
 
        }
@@ -834,6 +859,7 @@ int __wlan_hdd_cfg80211_cancel_remain_on_channel( struct wiphy *wiphy,
     {
         hddLog( LOG1, FL("Cancel ROC event is already pending, "
                          "waiting for ready on channel indication.") );
+        mutex_unlock(&pHddCtx->roc_lock);
         return 0;
     }
     if (NULL != cfgState->remain_on_chan_ctx)
@@ -853,11 +879,13 @@ int __wlan_hdd_cfg80211_cancel_remain_on_channel( struct wiphy *wiphy,
                         "%s:wait on cancel_rem_on_chan_var failed %d",
                         __func__, status);
             }
+            mutex_unlock(&pHddCtx->roc_lock);
             return 0;
         }
         else
             pRemainChanCtx->hdd_remain_on_chan_cancel_in_progress = TRUE;
     }
+    mutex_unlock(&pHddCtx->roc_lock);
     INIT_COMPLETION(pAdapter->cancel_rem_on_chan_var);
     /* Issue abort remain on chan request to sme.
      * The remain on channel callback will make sure the remain_on_chan
@@ -1024,7 +1052,17 @@ int __wlan_hdd_mgmt_tx( struct wiphy *wiphy, struct net_device *dev,
     //If the wait is coming as 0 with off channel set
     //then set the wait to 200 ms
     if (offchan && !wait)
+    {
         wait = ACTION_FRAME_DEFAULT_WAIT;
+        if (pRemainChanCtx)
+        {
+            tANI_U32 current_time = vos_timer_get_system_time();
+            int remaining_roc_time = ((int) pRemainChanCtx->duration -
+                    (current_time - pAdapter->startRocTs));
+            if ( remaining_roc_time > ACTION_FRAME_DEFAULT_WAIT)
+                wait = remaining_roc_time;
+        }
+    }
 
     //Call sme API to send out a action frame.
     // OR can we send it directly through data path??
@@ -1109,7 +1147,7 @@ int __wlan_hdd_mgmt_tx( struct wiphy *wiphy, struct net_device *dev,
         rem_on_channel_request_type_t req_type = OFF_CHANNEL_ACTION_TX;
         // In case of P2P Client mode if we are already
         // on the same channel then send the frame directly
-
+        mutex_lock(&pHddCtx->roc_lock);
         if( (cfgState->remain_on_chan_ctx != NULL) &&
             (cfgState->current_freq == chan->center_freq)
           )
@@ -1149,6 +1187,7 @@ int __wlan_hdd_mgmt_tx( struct wiphy *wiphy, struct net_device *dev,
                 hddLog(VOS_TRACE_LEVEL_INFO,
                    "action frame: extending the wait time %u",
                    wait);
+                mutex_unlock(&pHddCtx->roc_lock);
                 goto send_frame;
             }
             else
@@ -1156,6 +1195,7 @@ int __wlan_hdd_mgmt_tx( struct wiphy *wiphy, struct net_device *dev,
                 if ( TRUE ==
                      pRemainChanCtx->hdd_remain_on_chan_cancel_in_progress )
                 {
+                    mutex_unlock(&pHddCtx->roc_lock);
                     hddLog(VOS_TRACE_LEVEL_INFO,
                            "action frame tx: waiting for completion of ROC ");
 
@@ -1168,12 +1208,14 @@ int __wlan_hdd_mgmt_tx( struct wiphy *wiphy, struct net_device *dev,
                                "%s:wait on cancel_rem_on_chan_var failed %d",
                                 __func__, status);
                     }
+                    goto bypass_lock;
                 }
             }
         }
+        mutex_unlock(&pHddCtx->roc_lock);
+bypass_lock:
         hddLog(VOS_TRACE_LEVEL_INFO,
                "action frame: Request ROC for wait time %u", wait);
-
         INIT_COMPLETION(pAdapter->offchannel_tx_event);
         status = wlan_hdd_request_remain_on_channel(wiphy, dev,
                                         chan,
@@ -1227,13 +1269,15 @@ int __wlan_hdd_mgmt_tx( struct wiphy *wiphy, struct net_device *dev,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
         if( cfgState->remain_on_chan_ctx )
         {
+            mutex_lock(&pHddCtx->roc_lock);
             cfgState->action_cookie = cfgState->remain_on_chan_ctx->cookie;
             *cookie = cfgState->action_cookie;
+            mutex_unlock(&pHddCtx->roc_lock);
         }
         else
         {
 #endif
-            *cookie = (tANI_U32) cfgState->buf;
+            *cookie = (uintptr_t) cfgState->buf;
             cfgState->action_cookie = *cookie;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
         }
@@ -1296,7 +1340,7 @@ err:
     }
     return 0;
 err_rem_channel:
-    *cookie = (tANI_U32)cfgState;
+    *cookie = (uintptr_t)cfgState;
     cfg80211_mgmt_tx_status(
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
                             pAdapter->dev->ieee80211_ptr,
@@ -1771,7 +1815,20 @@ int __wlan_hdd_add_virtual_intf( struct wiphy *wiphy, char *name,
     hdd_context_t *pHddCtx = (hdd_context_t*) wiphy_priv(wiphy);
     hdd_adapter_t *pAdapter = NULL;
     hdd_scaninfo_t *pScanInfo = NULL;
+    int ret = 0;
     ENTER();
+
+    ret = wlan_hdd_validate_context(pHddCtx);
+    if (0 != ret)
+    {
+        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                   "%s: HDD context is not valid", __func__);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
+       return ERR_PTR(-EINVAL);
+#else
+       return -EAGAIN;
+#endif
+    }
 
     MTRACE(vos_trace(VOS_MODULE_ID_HDD,
                      TRACE_CODE_HDD_ADD_VIRTUAL_INTF, NO_SESSION, type));
@@ -1781,17 +1838,6 @@ int __wlan_hdd_add_virtual_intf( struct wiphy *wiphy, char *name,
     {
        hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Interface type %d already exists. Two"
                      "interfaces of same type are not supported currently.",__func__, type);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
-       return ERR_PTR(-EINVAL);
-#else
-       return -EAGAIN;
-#endif
-    }
-
-    if (pHddCtx->isLogpInProgress)
-    {
-       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                "%s:LOGP in Progress. Ignore!!!", __func__);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
        return ERR_PTR(-EINVAL);
 #else
@@ -2393,7 +2439,7 @@ static void hdd_wlan_tx_complete( hdd_adapter_t* pAdapter,
 
     if (data == NULL)
     {
-        hddLog( LOGE, FL("Not Able to Push %d byte to skb"), cfgState->len);
+        hddLog( LOGE, FL("Not Able to Push %zu byte to skb"), cfgState->len);
         kfree_skb( cfgState->skb );
         return;
     }

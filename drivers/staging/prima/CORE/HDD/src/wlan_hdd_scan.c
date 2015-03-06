@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -71,8 +71,6 @@
 #include <linux/wireless.h>
 #include <net/cfg80211.h>
 
-#define GET_IE_LEN_IN_BSS(lenInBss) ( lenInBss + sizeof(lenInBss) - \
-              ((int) OFFSET_OF( tSirBssDescription, ieFields)))
 
 #define WEXT_CSCAN_HEADER               "CSCAN S\x01\x00\x00S\x00"
 #define WEXT_CSCAN_HEADER_SIZE          12
@@ -239,7 +237,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
    {
       /* no space to add event */
       /* Error code may be E2BIG */
-       hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWAP ");
+       hddLog(LOGE, "hdd_IndicateScanResult: no space for SIOCGIWAP ");
        return -E2BIG;
    }
 
@@ -275,7 +273,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
 
    if (last_event == current_event)
    { /* no space to add event */
-       hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWNAME");
+       hddLog( LOGE, "hdd_IndicateScanResult: no space for SIOCGIWNAME");
       /* Error code, may be E2BIG */
        return -E2BIG;
    }
@@ -294,7 +292,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
 
    if (last_event == current_event)
    { /* no space to add event */
-       hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWFREQ");
+       hddLog( LOGE, "hdd_IndicateScanResult: no space for SIOCGIWFREQ");
        return -E2BIG;
    }
 
@@ -325,7 +323,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
 
    if (last_event == current_event)
    { /* no space to add event */
-       hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWMODE");
+       hddLog(LOGE, "hdd_IndicateScanResult: no space for SIOCGIWMODE");
        return -E2BIG;
    }
    /* To extract SSID */
@@ -365,14 +363,14 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
 
           if(last_event == current_event)
           { /* no space to add event */
-             hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWESSID");
+             hddLog( LOGE, "hdd_IndicateScanResult: no space for SIOCGIWESSID");
              return -E2BIG;
           }
        }
 
       if( hdd_GetWPARSNIEs( ( tANI_U8 *) descriptor->ieFields, ie_length, &last_event, &current_event, scanInfo )  < 0    )
       {
-          hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWESSID");
+          hddLog( LOGE, "hdd_IndicateScanResult: no space for SIOCGIWESSID");
           return -E2BIG;
       }
 
@@ -448,7 +446,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
       {
           if (last_event == current_event)
           { /* no space to add event */
-              hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWRATE");
+              hddLog( LOGE, "hdd_IndicateScanResult: no space for SIOCGIWRATE");
               return -E2BIG;
           }
       }
@@ -475,7 +473,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
       if(last_event == current_event)
       { /* no space to add event
                Error code, may be E2BIG */
-          hddLog( LOGW, "hdd_IndicateScanResult: no space for SIOCGIWENCODE");
+          hddLog( LOGE, "hdd_IndicateScanResult: no space for SIOCGIWENCODE");
           return -E2BIG;
       }
    }
@@ -510,7 +508,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
 
    if(last_event == current_event)
    { /* no space to add event */
-       hddLog( LOGW, "hdd_IndicateScanResult: no space for IWEVQUAL");
+       hddLog( LOGE, "hdd_IndicateScanResult: no space for IWEVQUAL");
        return -E2BIG;
    }
 
@@ -525,7 +523,7 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
                                          &event, custom);
    if(last_event == current_event)
    { /* no space to add event */
-      hddLog( LOGW, "hdd_IndicateScanResult: no space for IWEVCUSTOM (age)");
+      hddLog( LOGE, "hdd_IndicateScanResult: no space for IWEVCUSTOM (age)");
       return -E2BIG;
    }
 
